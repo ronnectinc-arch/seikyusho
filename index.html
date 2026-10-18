@@ -101,6 +101,18 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .bar strong{font-family:var(--f-display);font-size:24px;font-variant-numeric:tabular-nums;line-height:1.2}
 .toast{position:fixed;left:16px;right:16px;bottom:calc(86px + env(safe-area-inset-bottom,0px));margin-inline:auto;max-width:480px;
   background:var(--fg);color:var(--bg);border-radius:8px;padding:11px 14px;font-size:14px;z-index:20;text-align:center}
+.stack{display:flex;flex-direction:column;gap:14px}
+.mnav{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center}
+.mnav .btn{font-size:20px;padding:6px 16px;line-height:1.2}
+.mnav-t{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
+.mnav-t b{font-size:17px}
+.chip{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--sunken);color:var(--muted);white-space:nowrap}
+.chip.edited{background:var(--accent-soft);color:var(--fg)}
+.chip.done{background:var(--ok);color:var(--surface)}
+.hist li.month{cursor:pointer}
+.hist li.month.is-cur{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.hist .dates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.hist .dates b{display:block;color:var(--fg);font-weight:500;font-size:13.5px}
 @media (max-width:380px){ .grid3{grid-template-columns:1fr 1fr} .grid3 .p{grid-column:1/-1} }
 </style>
 
@@ -109,13 +121,13 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 <div class="wrap">
   <header class="top">
     <h1>スマホ請求書メーカー</h1>
-    <p class="sub">入力内容はこの端末に自動で保存されます</p>
+    <p class="sub">12か月分が日付入りで並んでいます。月を選んで数量を直すだけ。入力内容はこの端末に保存されます</p>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="画面の切り替え">
-    <button type="button" role="tab" id="tab-edit" data-tab="edit" aria-selected="true">入力</button>
+    <button type="button" role="tab" id="tab-months" data-tab="months" aria-selected="true">12か月</button>
+    <button type="button" role="tab" id="tab-edit" data-tab="edit" aria-selected="false">入力</button>
     <button type="button" role="tab" id="tab-preview" data-tab="preview" aria-selected="false">プレビュー</button>
-    <button type="button" role="tab" id="tab-history" data-tab="history" aria-selected="false">履歴</button>
   </nav>
 
   <div class="notice" id="sampleNotice" hidden>
@@ -124,8 +136,35 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
   </div>
   <div class="notice" id="storeNotice" hidden><p>この画面では入力内容を端末に保存できません。閉じる前にPDFを保存してください。</p></div>
 
+  <!-- 12か月 -->
+  <section id="pane-months" class="stack">
+    <details class="sec" id="sec-plan">
+      <summary><span>締め日・請求日・支払日</span><span class="hint" id="planHint"></span></summary>
+      <div class="body">
+        <p class="help">ここで決めた日付が12か月分の請求書に自動で入ります。変えると、PDF作成済みの月以外の日付がまとめて変わります。</p>
+        <div class="grid">
+          <label class="f">締め日<select id="pl-close" data-p="close"></select></label>
+          <label class="f">請求日<select id="pl-issue" data-p="issue">
+            <option value="close">締め日と同じ日</option><option value="n1">翌月1日</option><option value="n5">翌月5日</option><option value="n10">翌月10日</option>
+          </select></label>
+          <label class="f">支払月<select id="pl-paym" data-p="payM"><option value="1">締めの翌月</option><option value="2">締めの翌々月</option><option value="0">締めと同じ月</option></select></label>
+          <label class="f">支払日<select id="pl-payd" data-p="payD"></select></label>
+          <label class="f full">件名（「{月}」が各月の数字になります）<input id="pl-subject" data-p="subject" placeholder="{月}月分 作業代金"></label>
+          <label class="f full">最初の月<input id="pl-start" data-p="start" type="month"></label>
+        </div>
+      </div>
+    </details>
+    <ul class="hist" id="months"></ul>
+    <button type="button" class="btn soft wide" id="addYear">さらに12か月分を追加</button>
+  </section>
+
   <!-- 入力 -->
-  <section id="pane-edit" style="display:contents">
+  <section id="pane-edit" hidden class="stack">
+    <div class="mnav">
+      <button type="button" class="btn" id="prevM" aria-label="前の月">‹</button>
+      <div class="mnav-t"><b id="curLabel"></b><span class="chip" id="curChip"></span></div>
+      <button type="button" class="btn" id="nextM" aria-label="次の月">›</button>
+    </div>
     <details class="sec" id="sec-issuer">
       <summary><span>あなたの情報（請求元）</span><span class="hint" id="issuerHint"></span></summary>
       <div class="body">
@@ -200,10 +239,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
     </details>
 
     <dl class="sum" id="sum"></dl>
-    <div class="row">
-      <button type="button" class="btn" id="newInv">新しい請求書を作る</button>
-      <button type="button" class="btn" id="saveHist">履歴に保存</button>
-    </div>
+    <button type="button" class="btn wide" id="applyFwd">この内容を、これより後の未編集の月にも入れる</button>
+    <p class="help">明細・請求先・消費税・備考を後の月にコピーします。日付と番号は各月のままです。</p>
   </section>
 
   <!-- プレビュー -->
@@ -212,11 +249,6 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
     <div class="pages" id="pages"></div>
   </section>
 
-  <!-- 履歴 -->
-  <section id="pane-history" hidden>
-    <p class="help" style="margin-bottom:10px">保存した請求書はこの端末に残ります。「複製」で前回の内容から新しい請求書を作れます。</p>
-    <ul class="hist" id="hist"></ul>
-  </section>
 </div>
 
 <div class="bar"><div class="bar-in">
@@ -642,24 +674,51 @@ function num(s){
   var n=parseFloat(s);return isFinite(n)?n:0;
 }
 function blankItem(){return{date:"",name:"",qty:"1",unit:"",price:"",rate:10}}
-function newNo(hist){
-  var pre=today().replace(/-/g,""),n=1;
-  (hist||[]).forEach(function(h){if(h.inv&&String(h.inv.no).indexOf(pre)===0)n++});
-  return pre+"-"+pad(n);
-}
-function blankInv(hist){return{no:newNo(hist),date:today(),due:nextMonthEnd(today()),to:"",honor:"御中",subject:"",taxMode:"ex",withhold:"0",items:[blankItem()],note:""}}
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function blankInv(){return{no:"",date:today(),due:nextMonthEnd(today()),to:"",honor:"御中",subject:"",taxMode:"ex",withhold:"0",items:[blankItem()],note:""}}
 function blankIssuer(){return{name:"",zip:"",addr:"",tel:"",email:"",regno:"",bank:"",branch:"",atype:"普通",ano:"",aname:""}}
+function thisYM(){var d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)}
+function defaultPlan(){return{close:"end",issue:"close",payM:"1",payD:"end",subject:"{月}月分 作業代金",start:thisYM()}}
+
+/* ---------- 12か月の日付 ---------- */
+function ymParts(ym){var p=ym.split("-");return{y:+p[0],m:+p[1]}}
+function ymAdd(ym,n){var p=ymParts(ym),d=new Date(p.y,p.m-1+n,1);return d.getFullYear()+"-"+pad(d.getMonth()+1)}
+function dayOf(y,m,day){/* m は1始まり。13以上でも翌年として扱う。day は日付か "end"（末日） */
+  var d=new Date(y,m-1,1),last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+  return iso(new Date(d.getFullYear(),d.getMonth(),day==="end"?last:Math.min(+day,last)))}
+function planDates(plan,ym){
+  var p=ymParts(ym),close=dayOf(p.y,p.m,plan.close),issue=close;
+  if(plan.issue!=="close")issue=dayOf(p.y,p.m+1,plan.issue.slice(1));
+  var due=dayOf(p.y,p.m+(+plan.payM),plan.payD);
+  return{close:close,issue:issue,due:due,no:p.y+pad(p.m)+"-01",subject:String(plan.subject||"").replace(/\{月\}/g,p.m)};
+}
+function makeMonth(plan,ym,base){
+  var d=planDates(plan,ym),inv={no:d.no,date:d.issue,due:d.due,subject:d.subject,to:base.to||"",honor:base.honor||"御中",
+    taxMode:base.taxMode||"ex",withhold:base.withhold||"0",items:clone(base.items&&base.items.length?base.items:[blankItem()]),note:base.note||""};
+  inv.items.forEach(function(it){it.date=""});
+  return{inv:inv,status:"auto"};
+}
+function ensureMonths(st,from,count,base){
+  for(var i=0;i<count;i++){var ym=ymAdd(from,i);if(!st.months[ym])st.months[ym]=makeMonth(st.plan,ym,base)}
+}
+function keys(){return Object.keys(state.months).sort()}
+function applyPlan(){
+  keys().forEach(function(ym){var mo=state.months[ym];if(mo.status==="done")return;var d=planDates(state.plan,ym);
+    mo.inv.date=d.issue;mo.inv.due=d.due;if(mo.status==="auto"){mo.inv.no=d.no;mo.inv.subject=d.subject}});
+}
+function pickCur(st){var ks=Object.keys(st.months).sort(),t=thisYM();return st.months[t]?t:ks[0]}
+function bind(){state.inv=state.months[state.cur].inv}
+function newState(issuer,base,sample){
+  var st={v:2,sample:!!sample,issuer:issuer,plan:defaultPlan(),months:{}};
+  ensureMonths(st,st.plan.start,12,base);st.cur=pickCur(st);return st;
+}
 function sampleState(){
-  var inv=blankInv([]);
-  inv.to="株式会社サンプル商事";inv.subject=(new Date().getMonth()+1)+"月分 作業代金";
-  inv.items=[
+  var base={to:"株式会社サンプル商事",honor:"御中",taxMode:"ex",withhold:"0",note:"お振込手数料はご負担くださいますようお願いいたします。",items:[
     {date:"",name:"ゲーム機本体 検品・クリーニング・梱包",qty:"60",unit:"台",price:"300",rate:10},
     {date:"",name:"コントローラー クリーニング・梱包",qty:"40",unit:"個",price:"80",rate:10},
-    {date:"",name:"納品送料（実費）",qty:"1",unit:"式",price:"1500",rate:10}
-  ];
-  inv.note="お振込手数料はご負担くださいますようお願いいたします。";
-  return{sample:true,issuer:{name:"山田 花子（サンプル）",zip:"950-0000",addr:"新潟県新潟市中央区〇〇1-2-3",tel:"090-0000-0000",email:"",regno:"",
-    bank:"〇〇銀行",branch:"新潟支店",atype:"普通",ano:"1234567",aname:"ヤマダ ハナコ"},inv:inv,history:[]};
+    {date:"",name:"納品送料（実費）",qty:"1",unit:"式",price:"1500",rate:10}]};
+  return newState({name:"山田 花子（サンプル）",zip:"950-0000",addr:"新潟県新潟市中央区〇〇1-2-3",tel:"090-0000-0000",email:"",regno:"",
+    bank:"〇〇銀行",branch:"新潟支店",atype:"普通",ano:"1234567",aname:"ヤマダ ハナコ"},base,true);
 }
 
 /* ---------- 計算 ---------- */
@@ -694,23 +753,57 @@ function sumRows(inv,c){
 /* ---------- 保存 ---------- */
 var state,storeOk=true;
 function load(){
-  try{var s=JSON.parse(localStorage.getItem(KEY));if(s&&s.inv&&s.issuer){s.history=s.history||[];if(!s.inv.items||!s.inv.items.length)s.inv.items=[blankItem()];return s}}catch(e){}
+  var s=null;try{s=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+  if(s&&s.issuer&&s.months&&s.plan){if(!s.months[s.cur])s.cur=pickCur(s);return s}
+  if(s&&s.issuer&&s.inv){/* 旧版（1枚ずつ作る形）からの引き継ぎ：入力済みの内容を12か月分のひな形にする */
+    var ns=newState(s.issuer,s.inv,s.sample);return ns}
   return sampleState();
 }
 var saveT;
-function save(){clearTimeout(saveT);saveT=setTimeout(function(){
-  try{localStorage.setItem(KEY,JSON.stringify(state));storeOk=true}catch(e){storeOk=false}
+function saveNow(){
+  clearTimeout(saveT);saveT=null;
+  var o=Object.assign({},state);delete o.inv;
+  try{localStorage.setItem(KEY,JSON.stringify(o));storeOk=true}catch(e){storeOk=false}
   $("storeNotice").hidden=storeOk;
-},250)}
+}
+function save(){clearTimeout(saveT);saveT=setTimeout(saveNow,250)}
+/* 画面を閉じる・アプリを切り替える直前に、待ち中の保存を書き込む */
+window.addEventListener("pagehide",function(){if(saveT)saveNow()});
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden"&&saveT)saveNow()});
 
 /* ---------- 画面 ---------- */
 var toastT;
 function toast(msg){var t=$("toast");t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(function(){t.hidden=true},3600)}
 function get(path){var p=path.split(".");return state[p[0]][p[1]]}
 function fillForm(){
+  bind();
   document.querySelectorAll("[data-k]").forEach(function(el){var v=get(el.dataset.k);el.value=v==null?"":v});
   renderItems();refresh();
 }
+var STATUS={auto:["自動入力のまま",""],edited:["編集済み","edited"],done:["PDF作成済み","done"]};
+function chip(st){var s=STATUS[st]||STATUS.auto;return'<span class="chip '+s[1]+'">'+s[0]+'</span>'}
+function monthLabel(ym){var p=ymParts(ym);return p.y+"年"+p.m+"月分"}
+function fillPlan(){
+  var dayOpts='<option value="end">末日</option>'+Array.from({length:28},function(_,i){return'<option value="'+(i+1)+'">'+(i+1)+'日</option>'}).join("");
+  $("pl-close").innerHTML=dayOpts;$("pl-payd").innerHTML=dayOpts;
+  document.querySelectorAll("[data-p]").forEach(function(el){el.value=state.plan[el.dataset.p]});
+  planHint();
+}
+function dname(v){return v==="end"?"末日":v+"日"}
+function planHint(){var p=state.plan;
+  $("planHint").textContent=dname(p.close)+"締め・"+({"0":"当月","1":"翌月","2":"翌々月"})[p.payM]+dname(p.payD)+"払い"}
+function renderMonths(){
+  $("months").innerHTML=keys().map(function(ym){
+    var mo=state.months[ym],inv=mo.inv,c=compute(inv),d=planDates(state.plan,ym);
+    return '<li class="month'+(ym===state.cur?' is-cur':'')+'" data-ym="'+ym+'" tabindex="0" role="button" aria-label="'+monthLabel(ym)+'を開く">'+
+      '<div class="h1"><b>'+monthLabel(ym)+'</b>'+chip(mo.status)+'</div>'+
+      '<div class="dates"><span>締め日<b>'+sdate(d.close)+'</b></span><span>請求日<b>'+sdate(inv.date)+'</b></span><span>支払日<b>'+sdate(inv.due)+'</b></span></div>'+
+      '<div class="h1"><span class="meta">'+esc(inv.to||"請求先 未入力")+'</span><span class="amt">'+yen(c.pay)+'</span></div></li>';
+  }).join("");
+}
+function openMonth(ym){state.cur=ym;fillForm();save();showTab("edit")}
+function touch(){var mo=state.months[state.cur];if(mo.status==="auto"){mo.status="edited";curChip()}}
+function curChip(){var mo=state.months[state.cur];$("curChip").outerHTML=chip(mo.status).replace('class="chip','id="curChip" class="chip')}
 function renderItems(){
   var noTax=state.inv.taxMode==="none";
   $("items").innerHTML=state.inv.items.map(function(it,i){
@@ -734,36 +827,27 @@ function refresh(){
   c.lines.forEach(function(a,i){var e=$("it-"+i+"-amt");if(e)e.textContent=yen(a)});
   $("sum").innerHTML=sumRows(inv,c).map(function(r){return'<dt'+(r[2]?' class="tot"':'')+'>'+esc(r[0])+'</dt><dd'+(r[2]?' class="tot"':'')+'>'+esc(r[1])+'</dd>'}).join("");
   $("barTotal").textContent=yen(c.pay);
-  $("barLabel").textContent=c.wh?"差引ご請求金額":"ご請求金額";
+  $("barLabel").textContent=ymParts(state.cur).m+"月分 "+(c.wh?"差引ご請求金額":"ご請求金額");
   $("issuerHint").textContent=state.issuer.name||"未入力";
   $("basicHint").textContent=(inv.to?inv.to+" "+inv.honor:"請求先 未入力");
   $("itemsHint").textContent=inv.items.length+"件";
   $("taxHint").textContent=({ex:"税抜",in:"税込",none:"消費税なし"})[inv.taxMode]+(c.wh?"・源泉あり":"");
   $("noteHint").textContent=inv.note?"入力あり":"";
   $("sampleNotice").hidden=!state.sample;
-  var names={};state.history.forEach(function(h){if(h.inv.to)names[h.inv.to]=1});
+  var names={};keys().forEach(function(k){var t=state.months[k].inv.to;if(t)names[t]=1});
   $("toList").innerHTML=Object.keys(names).map(function(n){return'<option value="'+esc(n)+'">'}).join("");
+  var ks=keys(),i=ks.indexOf(state.cur);
+  $("curLabel").textContent=monthLabel(state.cur);curChip();
+  $("prevM").disabled=i<=0;$("nextM").disabled=i>=ks.length-1;
   previewDirty=true;if(curTab==="preview")schedulePreview();
 }
-function renderHistory(){
-  var h=state.history;
-  if(!h.length){$("hist").innerHTML='<li class="empty">まだ保存した請求書はありません。PDFを保存すると、ここに残ります。</li>';return}
-  $("hist").innerHTML=h.map(function(e,i){
-    return '<li><div class="h1"><b>'+esc(e.inv.to||"（請求先なし）")+'</b><span class="amt">'+yen(e.pay)+'</span></div>'+
-      '<div class="meta">No. '+esc(e.inv.no)+'　請求日 '+esc(jdate(e.inv.date))+(e.inv.subject?'　'+esc(e.inv.subject):'')+'</div>'+
-      '<div class="row"><button type="button" class="btn soft" data-h="copy" data-i="'+i+'">複製して新しく作る</button>'+
-      '<button type="button" class="btn" data-h="open" data-i="'+i+'">開く</button>'+
-      '<button type="button" class="btn ghost danger" data-h="del" data-i="'+i+'">削除</button></div></li>';
-  }).join("");
-}
-var curTab="edit";
+var curTab="months";
 function showTab(t){
   curTab=t;
   document.querySelectorAll(".tabs button").forEach(function(b){b.setAttribute("aria-selected",String(b.dataset.tab===t))});
-  $("pane-edit").style.display=t==="edit"?"contents":"none";
-  $("pane-preview").hidden=t!=="preview";$("pane-history").hidden=t!=="history";
+  $("pane-months").hidden=t!=="months";$("pane-edit").hidden=t!=="edit";$("pane-preview").hidden=t!=="preview";
   if(t==="preview")schedulePreview();
-  if(t==="history")renderHistory();
+  if(t==="months")renderMonths();
   window.scrollTo(0,0);
 }
 
@@ -873,14 +957,6 @@ function renderPreview(){
   pages.forEach(function(cv,i){var im=new Image();im.alt="請求書 "+(i+1)+"ページ目";im.src=cv.toDataURL("image/jpeg",0.9);$("pages").appendChild(im)});
 }
 
-/* ---------- 履歴 ---------- */
-function pushHistory(){
-  var c=compute(state.inv),e={savedAt:Date.now(),inv:JSON.parse(JSON.stringify(state.inv)),pay:c.pay};
-  var i=state.history.findIndex(function(h){return h.inv.no===state.inv.no});
-  if(i>=0)state.history.splice(i,1);
-  state.history.unshift(e);if(state.history.length>120)state.history.length=120;
-  save();
-}
 function missing(){
   var m=[];if(!state.issuer.name.trim())m.push("氏名・屋号");if(!state.inv.to.trim())m.push("請求先");
   if(!state.inv.items.some(function(it){return it.name.trim()&&num(it.price)}))m.push("明細（品目と単価）");
@@ -905,7 +981,7 @@ async function savePdf(){
       catch(e){if(e&&e.name==="AbortError"){toast("保存をやめました");return}}
     }
     if(!shared)download(blob,name);
-    state.sample=false;pushHistory();refresh();toast("PDFを作成しました。履歴にも残しました。");
+    state.sample=false;state.months[state.cur].status="done";refresh();save();toast(monthLabel(state.cur)+"のPDFを作成しました");
   }catch(e){toast("PDFを作れませんでした。もう一度お試しください。")}
   finally{btn.disabled=false;btn.textContent="PDFを保存・送る"}
 }
@@ -914,10 +990,35 @@ async function savePdf(){
 document.addEventListener("input",function(ev){
   var el=ev.target;
   if(el.dataset.k){var p=el.dataset.k.split(".");state[p[0]][p[1]]=el.value;
-    if(el.id==="iv-date"&&el.value){state.inv.due=nextMonthEnd(el.value);$("iv-due").value=state.inv.due}
+    if(p[0]==="inv")touch();
     if(el.id==="iv-taxmode")renderItems();
     refresh();save();
-  }else if(el.dataset.f){var it=state.inv.items[+el.dataset.i];if(!it)return;it[el.dataset.f]=el.dataset.f==="rate"?+el.value:el.value;refresh();save()}
+  }else if(el.dataset.f){var it=state.inv.items[+el.dataset.i];if(!it)return;it[el.dataset.f]=el.dataset.f==="rate"?+el.value:el.value;touch();refresh();save()}
+  else if(el.dataset.p){
+    var k=el.dataset.p;if(k==="start"&&!el.value)return;
+    state.plan[k]=el.value;
+    if(k==="start"){/* 開始月より前の未編集の月は消し、開始月から12か月をそろえる */
+      var base=state.months[state.cur].inv;
+      keys().forEach(function(ym){if(ym<el.value&&state.months[ym].status==="auto")delete state.months[ym]});
+      ensureMonths(state,el.value,12,base);if(!state.months[state.cur])state.cur=pickCur(state);
+    }
+    applyPlan();bind();planHint();renderMonths();refresh();save();
+  }
+});
+$("months").addEventListener("click",function(ev){var li=ev.target.closest("[data-ym]");if(li)openMonth(li.dataset.ym)});
+$("months").addEventListener("keydown",function(ev){if(ev.key!=="Enter"&&ev.key!==" ")return;var li=ev.target.closest("[data-ym]");if(li){ev.preventDefault();openMonth(li.dataset.ym)}});
+$("prevM").addEventListener("click",function(){var ks=keys(),i=ks.indexOf(state.cur);if(i>0){state.cur=ks[i-1];fillForm();save();window.scrollTo(0,0)}});
+$("nextM").addEventListener("click",function(){var ks=keys(),i=ks.indexOf(state.cur);if(i<ks.length-1){state.cur=ks[i+1];fillForm();save();window.scrollTo(0,0)}});
+$("addYear").addEventListener("click",function(){
+  var ks=keys(),last=ks[ks.length-1];ensureMonths(state,ymAdd(last,1),12,state.months[last].inv);
+  renderMonths();refresh();save();toast("12か月分を追加しました");
+});
+$("applyFwd").addEventListener("click",function(){
+  var src=state.inv,n=0;
+  keys().forEach(function(ym){if(ym<=state.cur)return;var mo=state.months[ym];if(mo.status!=="auto")return;
+    ["to","honor","taxMode","withhold","note"].forEach(function(f){mo.inv[f]=src[f]});
+    mo.inv.items=clone(src.items);mo.inv.items.forEach(function(it){it.date=""});n++});
+  save();toast(n?"後の"+n+"か月分に同じ内容を入れました":"後の月はすべて編集済みのため、変更していません");
 });
 var armed=null;
 function confirmTap(btn,label){
@@ -937,30 +1038,17 @@ $("addItem").addEventListener("click",function(){
   state.inv.items.push(it);renderItems();refresh();save();
   var f=$("it-"+(state.inv.items.length-1)+"-name");if(f)f.focus();
 });
-$("hist").addEventListener("click",function(ev){
-  var b=ev.target.closest("[data-h]");if(!b)return;var i=+b.dataset.i,e=state.history[i];if(!e)return;
-  if(b.dataset.h==="del"){if(!confirmTap(b,"もう一度押すと削除"))return;state.history.splice(i,1);save();renderHistory();return}
-  var inv=JSON.parse(JSON.stringify(e.inv));
-  if(b.dataset.h==="copy"){inv.no=newNo(state.history);inv.date=today();inv.due=nextMonthEnd(inv.date);inv.items.forEach(function(it){it.date=""})}
-  state.inv=inv;state.sample=false;fillForm();save();showTab("edit");
-  toast(b.dataset.h==="copy"?"前回の内容をコピーしました。数量を直してください。":"請求書を開きました");
-});
 document.querySelector(".tabs").addEventListener("click",function(ev){var b=ev.target.closest("[data-tab]");if(b)showTab(b.dataset.tab)});
 $("clearSample").addEventListener("click",function(){
-  state={sample:false,issuer:blankIssuer(),inv:blankInv([]),history:[]};fillForm();save();$("sec-issuer").open=true;$("is-name").focus();
+  state=newState(blankIssuer(),blankInv(),false);fillPlan();fillForm();renderMonths();save();
+  showTab("edit");$("sec-issuer").open=true;$("is-name").focus();toast("自分の情報を入れてください");
 });
-$("newInv").addEventListener("click",function(){
-  if(!confirmTap(this,"もう一度押すと今の内容を消します"))return;
-  var keep=state.inv;state.inv=blankInv(state.history);state.inv.to=keep.to;state.inv.honor=keep.honor;state.inv.taxMode=keep.taxMode;state.inv.withhold=keep.withhold;state.inv.note=keep.note;
-  fillForm();save();toast("新しい請求書を用意しました");
-});
-$("saveHist").addEventListener("click",function(){state.sample=false;pushHistory();refresh();toast("履歴に保存しました")});
 $("savePdf").addEventListener("click",savePdf);
 
 state=load();
 $("sec-issuer").open=!state.issuer.name;
-fillForm();
-window.__invoice={compute:compute,buildPages:buildPages};
+fillPlan();fillForm();showTab("months");
+window.__invoice={compute:compute,buildPages:buildPages,planDates:planDates};
 })();
 </script>
 </body>
